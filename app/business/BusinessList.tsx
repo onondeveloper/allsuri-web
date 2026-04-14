@@ -118,6 +118,8 @@ export default function BusinessList({ initialCount }: { initialCount: number })
       )
       .eq('role', 'business')
       .eq('businessstatus', 'approved')
+      .neq('name', '개발자')
+      .not('businessname', 'eq', '개발자')
       .order('jobs_accepted_count', { ascending: false, nullsFirst: false })
       .range(from, to)
 

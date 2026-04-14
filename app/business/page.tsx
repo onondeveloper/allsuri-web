@@ -16,6 +16,8 @@ async function getBusinessCount(): Promise<number> {
     .select('id', { count: 'exact', head: true })
     .eq('role', 'business')
     .eq('businessstatus', 'approved')
+    .neq('name', '개발자')
+    .not('businessname', 'eq', '개발자')
   return count ?? 0
 }
 
