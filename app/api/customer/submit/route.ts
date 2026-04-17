@@ -4,7 +4,87 @@ import { supabaseAdmin } from '@/lib/supabase-server'
 // 고객 견적 폼 제출:
 // 1. orders 테이블에 저장 (B2C 고객 레코드)
 // 2. marketplace_listings 테이블에도 저장 (B2B와 동일한 앱 오더 목록)
+// 3. 모든 사업자에게 "새 오더 등록" 알림 + push 발송
 // → 사업자가 앱에서 오더를 보고 입찰할 수 있음
+
+const SUPABASE_EDGE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
+
+// 모든 사업자에게 알림 + FCM push 발송 (listing 생성 성공 시 호출)
+async function broadcastNewWebOrder(listingId: string, title: string, category: string, address: string) {
+  try {
+    // 모든 앱 사용자(사업자) 조회
+    const { data: allUsers, error: usersError } = await supabaseAdmin
+      .from('users')
+      .select('id')
+      .limit(500)
+
+    if (usersError || !allUsers || allUsers.length === 0) {
+      console.warn('[submit] 사업자 목록 조회 실패:', usersError?.message)
+      return
+    }
+
+    const notifTitle = '새 고객 오더 등록'
+    const regionShort = address.split(' ').slice(0, 2).join(' ')
+    const notifBody = `[${category}] ${title} · ${regionShort}`
+    const now = new Date().toISOString()
+
+    // DB 알림 일괄 저장 (앱 내 알림 뱃지용)
+    const notifRows = allUsers.map((u: { id: string }) => ({
+      userid: u.id,
+      title: notifTitle,
+      body: notifBody,
+      type: 'new_web_order',
+      isread: false,
+      createdat: now,
+    }))
+
+    const { error: notifError } = await supabaseAdmin
+      .from('notifications')
+      .insert(notifRows)
+
+    if (notifError) {
+      console.warn('[submit] 알림 DB 저장 실패:', notifError.message)
+    } else {
+      console.log(`[submit] ✅ ${allUsers.length}명에게 알림 DB 저장 완료`)
+    }
+
+    // FCM push - fcm_token이 있는 사용자에게만 전송
+    const { data: pushUsers } = await supabaseAdmin
+      .from('users')
+      .select('id')
+      .not('fcm_token', 'is', null)
+      .limit(500)
+
+    if (pushUsers && pushUsers.length > 0) {
+      // 최대 100명씩 처리 (병렬 요청 수 제한)
+      const BATCH = 20
+      for (let i = 0; i < pushUsers.length; i += BATCH) {
+        const batch = pushUsers.slice(i, i + BATCH)
+        await Promise.allSettled(
+          batch.map((u: { id: string }) =>
+            fetch(`${SUPABASE_EDGE_URL}/functions/v1/send-push-notification`, {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                userId: u.id,
+                title: notifTitle,
+                body: notifBody,
+                data: { type: 'new_web_order', listingId },
+              }),
+            }).catch(() => null)
+          )
+        )
+      }
+      console.log(`[submit] ✅ ${pushUsers.length}명에게 FCM push 전송 완료`)
+    }
+  } catch (e: unknown) {
+    console.warn('[submit] broadcast 알림 실패 (무시):', e instanceof Error ? e.message : String(e))
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -95,9 +175,7 @@ export async function POST(req: NextRequest) {
           .single()
 
         if (listingError2) {
-          // marketplace_listings 저장 실패 → orders는 저장됐지만 앱에 표시 안 됨
           console.error('[submit] marketplace_listings 저장 실패 (fallback):', listingError2)
-          // orders는 성공했으므로 partial success 반환 (고객 견적은 접수됨)
           return NextResponse.json({
             success: true,
             orderId,
@@ -107,15 +185,14 @@ export async function POST(req: NextRequest) {
         }
 
         const listingId = (listing2 as { id: string } | null)?.id ?? null
+        // 알림 broadcast (listing 생성 성공)
+        if (listingId) await broadcastNewWebOrder(listingId, title, category, fullAddress)
         return NextResponse.json({
-          success: true,
-          orderId,
-          listingId,
+          success: true, orderId, listingId,
           message: '견적 요청이 접수되었습니다.',
         })
       }
 
-      // 다른 에러 → 상세 에러를 warning으로 반환해서 브라우저 콘솔에서 확인 가능하도록
       const errDetail = `code=${listingError.code} msg=${listingError.message} hint=${listingError.hint || ''} details=${listingError.details || ''}`
       console.error('[submit] marketplace_listings 저장 실패:', errDetail)
       return NextResponse.json({
@@ -127,6 +204,9 @@ export async function POST(req: NextRequest) {
     }
 
     const listingId = (listing as { id: string } | null)?.id ?? null
+
+    // ── 3. 모든 사업자에게 알림 + push 발송 ─────────────────────────
+    if (listingId) await broadcastNewWebOrder(listingId, title, category, fullAddress)
 
     return NextResponse.json({
       success: true,
