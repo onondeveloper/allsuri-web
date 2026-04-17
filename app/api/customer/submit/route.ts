@@ -4,16 +4,12 @@ import { supabaseAdmin } from '@/lib/supabase-server'
 // 고객 견적 폼 제출:
 // 1. orders 테이블에 저장 (B2C 고객 레코드)
 // 2. marketplace_listings 테이블에도 저장 (B2B와 동일한 앱 오더 목록)
-// 3. 모든 사업자에게 "새 오더 등록" 알림 + push 발송
-// → 사업자가 앱에서 오더를 보고 입찰할 수 있음
+// 3. 모든 사업자에게 "새 오더 등록" 알림 DB 저장 (빠른 단일 INSERT)
+// → FCM 개별 호출은 타임아웃 유발 → DB INSERT만으로 앱 알림 뱃지 보장
 
-const SUPABASE_EDGE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
-
-// 모든 사업자에게 알림 + FCM push 발송 (listing 생성 성공 시 호출)
+// DB 알림만 일괄 저장 (빠른 단일 INSERT, 절대 타임아웃 안 남)
 async function broadcastNewWebOrder(listingId: string, title: string, category: string, address: string) {
   try {
-    // 모든 앱 사용자(사업자) 조회
     const { data: allUsers, error: usersError } = await supabaseAdmin
       .from('users')
       .select('id')
@@ -24,19 +20,14 @@ async function broadcastNewWebOrder(listingId: string, title: string, category: 
       return
     }
 
-    const notifTitle = '새 고객 오더 등록'
     const regionShort = address.split(' ').slice(0, 2).join(' ')
-    const notifBody = `[${category}] ${title} · ${regionShort}`
-    const now = new Date().toISOString()
-
-    // DB 알림 일괄 저장 (앱 내 알림 뱃지용)
     const notifRows = allUsers.map((u: { id: string }) => ({
       userid: u.id,
-      title: notifTitle,
-      body: notifBody,
+      title: '새 고객 오더 등록',
+      body: `[${category}] ${title} · ${regionShort}`,
       type: 'new_web_order',
       isread: false,
-      createdat: now,
+      createdat: new Date().toISOString(),
     }))
 
     const { error: notifError } = await supabaseAdmin
@@ -46,43 +37,10 @@ async function broadcastNewWebOrder(listingId: string, title: string, category: 
     if (notifError) {
       console.warn('[submit] 알림 DB 저장 실패:', notifError.message)
     } else {
-      console.log(`[submit] ✅ ${allUsers.length}명에게 알림 DB 저장 완료`)
-    }
-
-    // FCM push - fcm_token이 있는 사용자에게만 전송
-    const { data: pushUsers } = await supabaseAdmin
-      .from('users')
-      .select('id')
-      .not('fcm_token', 'is', null)
-      .limit(500)
-
-    if (pushUsers && pushUsers.length > 0) {
-      // 최대 100명씩 처리 (병렬 요청 수 제한)
-      const BATCH = 20
-      for (let i = 0; i < pushUsers.length; i += BATCH) {
-        const batch = pushUsers.slice(i, i + BATCH)
-        await Promise.allSettled(
-          batch.map((u: { id: string }) =>
-            fetch(`${SUPABASE_EDGE_URL}/functions/v1/send-push-notification`, {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                userId: u.id,
-                title: notifTitle,
-                body: notifBody,
-                data: { type: 'new_web_order', listingId },
-              }),
-            }).catch(() => null)
-          )
-        )
-      }
-      console.log(`[submit] ✅ ${pushUsers.length}명에게 FCM push 전송 완료`)
+      console.log(`[submit] ✅ ${allUsers.length}명 알림 DB 저장 완료 (listingId=${listingId})`)
     }
   } catch (e: unknown) {
-    console.warn('[submit] broadcast 알림 실패 (무시):', e instanceof Error ? e.message : String(e))
+    console.warn('[submit] broadcast 실패 (무시):', e instanceof Error ? e.message : String(e))
   }
 }
 
@@ -185,8 +143,8 @@ export async function POST(req: NextRequest) {
         }
 
         const listingId = (listing2 as { id: string } | null)?.id ?? null
-        // 알림 broadcast (listing 생성 성공)
-        if (listingId) await broadcastNewWebOrder(listingId, title, category, fullAddress)
+        // 알림 broadcast: 응답 반환 후 백그라운드 실행 (타임아웃 방지)
+        if (listingId) broadcastNewWebOrder(listingId, title, category, fullAddress).catch(() => null)
         return NextResponse.json({
           success: true, orderId, listingId,
           message: '견적 요청이 접수되었습니다.',
@@ -205,8 +163,9 @@ export async function POST(req: NextRequest) {
 
     const listingId = (listing as { id: string } | null)?.id ?? null
 
-    // ── 3. 모든 사업자에게 알림 + push 발송 ─────────────────────────
-    if (listingId) await broadcastNewWebOrder(listingId, title, category, fullAddress)
+    // ── 3. 사업자 알림 DB 저장 (fire-and-forget: 응답 후 백그라운드 실행)
+    // await 제거 → 타임아웃 502 방지. DB INSERT만 수행하므로 매우 빠름.
+    if (listingId) broadcastNewWebOrder(listingId, title, category, fullAddress).catch(() => null)
 
     return NextResponse.json({
       success: true,
