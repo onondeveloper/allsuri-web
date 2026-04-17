@@ -20,7 +20,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   if (!biz) return NextResponse.json({ error: '사업자를 찾을 수 없습니다.' }, { status: 404 })
 
-  const reviewList = reviews || []
+  type Review = { id: string; rating: number | null; comment: string | null; is_admin_review: boolean | null; created_at: string }
+  const reviewList: Review[] = reviews || []
   const avgRating = reviewList.length
     ? Math.round((reviewList.reduce((s, r) => s + (r.rating || 0), 0) / reviewList.length) * 10) / 10
     : null
