@@ -3,7 +3,7 @@ import { supabaseAdmin, normalizePhone } from '@/lib/supabase-server'
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id: orderId } = await params
-  const { phone, password, estimateId, businessId } = await req.json()
+  const { phone, password, estimateId, businessId, listingId, isBid } = await req.json()
 
   if (!phone || !password) return NextResponse.json({ error: '인증 정보가 필요합니다.' }, { status: 401 })
   if (!estimateId || !businessId) return NextResponse.json({ error: '견적 ID와 사업자 ID가 필요합니다.' }, { status: 400 })
@@ -30,7 +30,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // ── 낙찰 처리: order_bid 방식 (B2B와 동일) ──────────────────────
   // estimateId = order_bid.id (isBid:true인 경우) 또는 estimates.id
   // listingId = marketplace_listing.id (있으면)
-  const { listingId, isBid } = body
 
   let jobId: string | null = null
 
