@@ -26,6 +26,7 @@ interface FormData {
   name: string
   phone: string
   email: string
+  pin: string
   images: File[]
   imagePreviewUrls: string[]
 }
@@ -85,6 +86,7 @@ export default function RequestForm() {
     name: '',
     phone: '',
     email: '',
+    pin: '',
     images: [],
     imagePreviewUrls: [],
   })
@@ -131,6 +133,7 @@ export default function RequestForm() {
     const phoneRegex = /^01[0-9]{8,9}$/
     const normalizedPhone = form.phone.replace(/[-\s]/g, '')
     if (!phoneRegex.test(normalizedPhone)) return '올바른 전화번호를 입력해주세요 (예: 010-1234-5678)'
+    if (!form.pin || form.pin.length !== 4 || !/^\d{4}$/.test(form.pin)) return '4자리 숫자 비밀번호를 입력해주세요 (내 견적 조회에 사용됩니다)'
     return ''
   }
 
@@ -166,27 +169,31 @@ export default function RequestForm() {
     setLoading(true)
 
     try {
+      // 1. 이미지 먼저 업로드 (클라이언트 측 Supabase Storage)
       const imageUrls = form.images.length > 0 ? await uploadImages() : []
-      const normalizedPhone = form.phone.replace(/[-\s]/g, '')
-      const fullAddress = form.addressDetail
-        ? `${form.address} ${form.addressDetail}`
-        : form.address
 
-      const { error: insertError } = await supabase.from('orders').insert({
-        title: form.title.trim(),
-        description: form.description.trim(),
-        address: fullAddress,
-        visitDate: form.visitDate,
-        status: 'pending',
-        category: form.category,
-        customerName: form.name.trim(),
-        customerPhone: normalizedPhone,
-        customerEmail: form.email.trim() || null,
-        isAnonymous: true,
-        images: imageUrls,
+      // 2. 서버 API 호출 → orders + marketplace_listings 동시 생성
+      const res = await fetch('/api/customer/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: form.title.trim(),
+          description: form.description.trim(),
+          address: form.address.trim(),
+          addressDetail: form.addressDetail.trim(),
+          visitDate: form.visitDate,
+          category: form.category,
+          customerName: form.name.trim(),
+          customerPhone: form.phone.replace(/[-\s]/g, ''),
+          customerEmail: form.email.trim() || null,
+          pin: form.pin,
+          imageUrls,
+        }),
       })
 
-      if (insertError) throw insertError
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || '요청 실패')
+
       setSubmitted(true)
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -198,16 +205,36 @@ export default function RequestForm() {
 
   if (submitted) {
     return (
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-10 text-center">
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 text-center">
         <div className="text-6xl mb-4">🎉</div>
         <h2 className="text-2xl font-bold text-gray-900 mb-3">견적 요청이 완료되었습니다!</h2>
-        <p className="text-gray-500 leading-relaxed mb-6">
+        <p className="text-gray-500 leading-relaxed mb-5">
           전문 업체들이 <strong className="text-blue-600">{form.phone}</strong>으로<br />
           견적서를 보내드릴 예정입니다.<br />
           평균 응답 시간은 <strong>2시간 이내</strong>입니다.
         </p>
-        <div className="bg-blue-50 rounded-xl p-4 mb-6 text-sm text-blue-700 text-left">
-          <div className="font-semibold mb-2">접수 내용 요약</div>
+
+        {/* 내 견적 조회 안내 */}
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-5 text-left">
+          <div className="font-bold text-blue-700 mb-2 flex items-center gap-1.5">
+            <span>🔑</span> 내 견적 조회 정보
+          </div>
+          <div className="text-sm text-blue-600 space-y-1">
+            <div>전화번호: <strong>{form.phone}</strong></div>
+            <div>비밀번호: <strong className="text-2xl tracking-widest">{form.pin}</strong></div>
+          </div>
+          <p className="text-xs text-blue-500 mt-2">이 정보로 &apos;내 견적&apos; 메뉴에서 공사 현황을 확인하고 사업자를 선택할 수 있습니다.</p>
+        </div>
+
+        <a
+          href="/my-order"
+          className="block w-full bg-blue-600 text-white py-3 rounded-xl font-bold mb-3 hover:bg-blue-700 transition-colors text-center"
+        >
+          내 견적 현황 확인하기 →
+        </a>
+
+        <div className="bg-gray-50 rounded-xl p-4 mb-4 text-sm text-gray-600 text-left">
+          <div className="font-semibold text-gray-700 mb-2">접수 내용 요약</div>
           <div>카테고리: {form.category}</div>
           <div>제목: {form.title}</div>
           <div>주소: {form.address}</div>
@@ -218,17 +245,9 @@ export default function RequestForm() {
             setSubmitted(false)
             setStep(1)
             setForm({
-              category: '기타',
-              title: '',
-              description: '',
-              address: '',
-              addressDetail: '',
-              visitDate: '',
-              name: '',
-              phone: '',
-              email: '',
-              images: [],
-              imagePreviewUrls: [],
+              category: '기타', title: '', description: '', address: '',
+              addressDetail: '', visitDate: '', name: '', phone: '', email: '',
+              pin: '', images: [], imagePreviewUrls: [],
             })
           }}
           className="text-blue-600 hover:underline text-sm"
@@ -445,6 +464,24 @@ export default function RequestForm() {
               placeholder="example@email.com"
               className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+              내 견적 조회 비밀번호 <span className="text-red-500">*</span>
+              <span className="text-gray-400 font-normal ml-1">(4자리 숫자)</span>
+            </label>
+            <input
+              type="tel"
+              value={form.pin}
+              onChange={(e) => update('pin', e.target.value.replace(/[^0-9]/g, '').slice(0, 4))}
+              placeholder="0000"
+              maxLength={4}
+              className="w-full border border-gray-300 rounded-xl px-4 py-3 text-2xl font-bold tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              🔑 &apos;내 견적&apos; 메뉴에서 공사 현황 조회·사업자 선택 시 사용됩니다. 꼭 기억해 두세요!
+            </p>
           </div>
 
           {/* Final summary */}
