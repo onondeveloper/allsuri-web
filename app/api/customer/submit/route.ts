@@ -49,64 +49,83 @@ export async function POST(req: NextRequest) {
 
     if (orderError) {
       console.error('[submit] orders 저장 실패:', orderError)
-      throw new Error(orderError.message)
+      return NextResponse.json(
+        { error: `견적 저장 실패: ${orderError.message}` },
+        { status: 500 }
+      )
     }
 
-    const orderId = order.id
+    const orderId = (order as { id: string }).id
 
-    // ── 2. marketplace_listings 에도 동일하게 저장 ───────────────────
+    // ── 2. marketplace_listings 에도 저장 ────────────────────────────
     // 사업자가 앱 오더 목록에서 볼 수 있도록
-    // posted_by = null (익명 고객), 서비스 롤로 RLS 우회
-    const listingPayload: Record<string, unknown> = {
+    // posted_by = null 허용 → DB에서 ALTER COLUMN posted_by DROP NOT NULL 필수
+    const listingPayload = {
       title,
-      description: `${description}${customerName ? `\n\n[고객 이름: ${customerName}]` : ''}`,
-      posted_by: null,          // 익명 고객 → null
-      status: 'open',           // 바로 입찰 가능
-      region: address,          // 지역 = 주소 앞부분
+      description: description + (customerName ? `\n\n[웹 고객: ${customerName}]` : ''),
+      posted_by: null,
+      status: 'open',
+      region: address,
       category,
       budget_amount: 0,
       media_urls: imageUrls || [],
       createdat: now,
       updatedat: now,
+      web_order_id: orderId,
     }
 
-    // web_order_id 컬럼이 있으면 연결 (SQL 실행 후)
     const { data: listing, error: listingError } = await supabaseAdmin
       .from('marketplace_listings')
-      .insert({ ...listingPayload, web_order_id: orderId })
+      .insert(listingPayload)
       .select('id')
       .single()
 
-    let listingId: string | null = null
-
     if (listingError) {
-      // web_order_id 컬럼 미생성 시 컬럼 없이 재시도
-      if (listingError.message?.includes('web_order_id') || listingError.code === '42703') {
+      // web_order_id 컬럼 미존재 시 (SQL 미실행) → 없이 재시도
+      if (
+        listingError.code === '42703' ||
+        listingError.message?.includes('web_order_id') ||
+        listingError.message?.includes('column')
+      ) {
+        const { web_order_id: _omit, ...payloadWithoutWebOrderId } = listingPayload
         const { data: listing2, error: listingError2 } = await supabaseAdmin
           .from('marketplace_listings')
-          .insert(listingPayload)
+          .insert(payloadWithoutWebOrderId)
           .select('id')
           .single()
+
         if (listingError2) {
-          console.warn('[submit] marketplace_listings 저장 실패 (무시):', listingError2.message)
-        } else {
-          listingId = listing2?.id || null
+          // marketplace_listings 저장 실패 → orders는 저장됐지만 앱에 표시 안 됨
+          console.error('[submit] marketplace_listings 저장 실패 (fallback):', listingError2)
+          // orders는 성공했으므로 partial success 반환 (고객 견적은 접수됨)
+          return NextResponse.json({
+            success: true,
+            orderId,
+            listingId: null,
+            warning: `앱 오더 등록 실패 (DB SQL 실행 필요): ${listingError2.message}`,
+          })
         }
-      } else {
-        console.warn('[submit] marketplace_listings 저장 실패 (무시):', listingError.message)
+
+        const listingId = (listing2 as { id: string } | null)?.id ?? null
+        return NextResponse.json({
+          success: true,
+          orderId,
+          listingId,
+          message: '견적 요청이 접수되었습니다.',
+        })
       }
-    } else {
-      listingId = listing?.id || null
+
+      // posted_by NOT NULL 등 다른 에러
+      console.error('[submit] marketplace_listings 저장 실패:', listingError)
+      return NextResponse.json({
+        success: true,
+        orderId,
+        listingId: null,
+        warning: `앱 오더 등록 실패 (DB 설정 필요): ${listingError.message}`,
+      })
     }
 
-    // ── 3. orders 에 listingId 백링크 (있으면) ────────────────────────
-    if (listingId) {
-      await supabaseAdmin
-        .from('orders')
-        .update({ matchedJobId: null }) // 초기화 확인용
-        .eq('id', orderId)
-      // listing_id 컬럼이 있으면 저장 (없어도 무방)
-    }
+    const listingId = (listing as { id: string } | null)?.id ?? null
 
     return NextResponse.json({
       success: true,

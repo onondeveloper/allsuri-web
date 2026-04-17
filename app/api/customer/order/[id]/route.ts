@@ -45,10 +45,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (listingId) {
     const { data: bidsData } = await supabaseAdmin
       .from('order_bids')
-      .select('id, bidder_id, message, status, bid_amount, created_at')
+      .select('id, bidder_id, message, status, created_at')
       .eq('listing_id', listingId)
       .order('created_at', { ascending: true })
-    bids = (bidsData || []) as BidRow[]
+    bids = ((bidsData || []) as Omit<BidRow, 'bid_amount'>[]).map(b => ({ ...b, bid_amount: null }))
   }
 
   // 입찰자 사업자 정보 조회
