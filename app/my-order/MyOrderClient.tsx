@@ -147,9 +147,28 @@ export default function MyOrderClient() {
   // ── 사업자 상세 모달 ─────────────────────────────────────────────
   async function openBizModal(estimate: Estimate) {
     setBizModal({ estimate })
-    const res = await fetch(`/api/customer/business/${estimate.businessId}`)
-    const data = await res.json()
-    if (res.ok) setBizModal({ estimate, biz: data.business, reviews: data.reviews, avgRating: data.avgRating })
+    try {
+      const res = await fetch(`/api/customer/business/${estimate.businessId}`)
+      const data = await res.json()
+      if (res.ok && data.business) {
+        setBizModal({ estimate, biz: data.business, reviews: data.reviews || [], avgRating: data.avgRating })
+      } else {
+        // API 오류 시 기본 정보만 표시
+        setBizModal({
+          estimate,
+          biz: { id: estimate.businessId, name: estimate.businessName, businessname: estimate.businessName, phonenumber: '', category: estimate.equipmentType, region: '', description: '', profile_image_url: '', projects_awarded_count: 0 },
+          reviews: [],
+          avgRating: null,
+        })
+      }
+    } catch {
+      setBizModal({
+        estimate,
+        biz: { id: estimate.businessId, name: estimate.businessName, businessname: estimate.businessName, phonenumber: '', category: estimate.equipmentType, region: '', description: '', profile_image_url: '', projects_awarded_count: 0 },
+        reviews: [],
+        avgRating: null,
+      })
+    }
   }
 
   // ── 낙찰 ─────────────────────────────────────────────────────────
