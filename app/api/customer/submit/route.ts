@@ -115,13 +115,14 @@ export async function POST(req: NextRequest) {
         })
       }
 
-      // posted_by NOT NULL 등 다른 에러
-      console.error('[submit] marketplace_listings 저장 실패:', listingError)
+      // 다른 에러 → 상세 에러를 warning으로 반환해서 브라우저 콘솔에서 확인 가능하도록
+      const errDetail = `code=${listingError.code} msg=${listingError.message} hint=${listingError.hint || ''} details=${listingError.details || ''}`
+      console.error('[submit] marketplace_listings 저장 실패:', errDetail)
       return NextResponse.json({
         success: true,
         orderId,
         listingId: null,
-        warning: `앱 오더 등록 실패 (DB 설정 필요): ${listingError.message}`,
+        warning: `앱 오더 등록 실패: ${errDetail}`,
       })
     }
 
