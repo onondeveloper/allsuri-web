@@ -39,16 +39,16 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   // 입찰 목록: marketplace_listing의 order_bids 우선 사용 (B2B와 동일 흐름)
   type BidRow = {
     id: string; bidder_id: string; message: string | null
-    status: string; bid_amount: number | null; created_at: string
+    status: string; bid_amount: number | null; estimated_days: number | null; created_at: string
   }
   let bids: BidRow[] = []
   if (listingId) {
     const { data: bidsData } = await supabaseAdmin
       .from('order_bids')
-      .select('id, bidder_id, message, status, created_at')
+      .select('id, bidder_id, message, status, bid_amount, estimated_days, created_at')
       .eq('listing_id', listingId)
       .order('created_at', { ascending: true })
-    bids = ((bidsData || []) as Omit<BidRow, 'bid_amount'>[]).map(b => ({ ...b, bid_amount: null }))
+    bids = (bidsData || []) as BidRow[]
   }
 
   // 입찰자 사업자 정보 조회
@@ -72,7 +72,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       equipmentType: (biz as UserRow).category || '',
       amount: b.bid_amount || 0,
       description: b.message || '',
-      estimatedDays: 0,
+      estimatedDays: b.estimated_days || 0,
       createdAt: b.created_at,
       status: b.status,
       isAwarded: b.status === 'selected',

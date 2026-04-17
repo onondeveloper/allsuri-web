@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { useState } from 'react'
 
 export default function Header() {
@@ -9,8 +10,8 @@ export default function Header() {
   return (
     <header className="sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm">
       <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2">
-          <span className="text-2xl">🔧</span>
+        <Link href="/" className="flex items-center gap-1.5">
+          <Image src="/app-icon.png" alt="올수리" width={36} height={36} className="rounded-xl" />
           <span className="text-xl font-bold text-blue-600">올수리</span>
         </Link>
 

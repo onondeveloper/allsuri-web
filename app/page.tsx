@@ -1,5 +1,6 @@
 import Link from 'next/link'
-import { CATEGORIES } from '@/lib/supabase'
+import Image from 'next/image'
+import { supabase, CATEGORIES } from '@/lib/supabase'
 
 const categoryIcons: Record<string, string> = {
   '누수': '💧',
@@ -23,12 +24,51 @@ const reviews = [
   { name: '박○○', region: '서울 마포구', text: '보일러가 갑자기 고장났는데 올수리 덕분에 당일 수리 완료! 정말 감사합니다.', category: '난방' },
 ]
 
-export default function Home() {
+type WebAd = { id: string; title: string; image_url: string | null; link_url: string | null; position: string }
+
+async function getWebContent(): Promise<{ settings: Record<string, string>; ads: WebAd[] }> {
+  try {
+    const [{ data: settingsData }, { data: adsData }] = await Promise.all([
+      supabase.from('web_settings').select('key, value'),
+      supabase.from('web_ads').select('id, title, image_url, link_url, position').eq('is_active', true).order('sort_order', { ascending: true }),
+    ])
+    const settings: Record<string, string> = {}
+    ;(settingsData || []).forEach((s: { key: string; value: string }) => { settings[s.key] = s.value })
+    return { settings, ads: (adsData || []) as WebAd[] }
+  } catch { return { settings: {}, ads: [] } }
+}
+
+export default async function Home() {
+  const { settings, ads } = await getWebContent()
+  const noticeBannerActive = settings.notice_banner_active === 'true'
+  const homeTopAds = ads.filter(a => a.position === 'home_top')
+  const homeMiddleAds = ads.filter(a => a.position === 'home_middle')
+  const homeBottomAds = ads.filter(a => a.position === 'home_bottom')
+
   return (
     <>
+      {/* 알림 배너 (관리자 설정 시 표시) */}
+      {noticeBannerActive && settings.notice_banner && (
+        <div className="bg-blue-700 text-white text-center text-sm py-2 px-4 font-medium">
+          📢 {settings.notice_banner}
+        </div>
+      )}
+      {/* 홈 상단 광고 배너 */}
+      {homeTopAds.map(ad => (
+        <a key={ad.id} href={ad.link_url || '#'} target="_blank" rel="noopener" className="block">
+          {ad.image_url
+            ? <Image src={ad.image_url} alt={ad.title} width={1200} height={200} className="w-full max-h-32 object-cover" />
+            : <div className="bg-gradient-to-r from-purple-600 to-blue-600 text-white text-center py-4 font-bold">{ad.title}</div>
+          }
+        </a>
+      ))}
       {/* Hero */}
       <section className="bg-gradient-to-br from-blue-600 to-blue-800 text-white py-20 px-4">
         <div className="max-w-3xl mx-auto text-center">
+          <div className="flex items-center justify-center gap-3 mb-4">
+            <Image src="/app-icon.png" alt="올수리" width={52} height={52} className="rounded-2xl shadow-md" />
+            <span className="text-3xl font-extrabold tracking-tight">올수리</span>
+          </div>
           <p className="text-blue-200 text-sm font-medium mb-3 tracking-wider uppercase">앱 설치 없이 · 회원가입 없이 · 무료로</p>
           <h1 className="text-3xl md:text-5xl font-bold leading-tight mb-5">
             집수리, 이제<br />
@@ -137,6 +177,22 @@ export default function Home() {
         </div>
       </section>
 
+      {/* 홈 중간 광고 */}
+      {homeMiddleAds.length > 0 && (
+        <div className="py-4 px-4 bg-gray-50">
+          <div className="max-w-4xl mx-auto flex flex-col gap-3">
+            {homeMiddleAds.map(ad => (
+              <a key={ad.id} href={ad.link_url || '#'} target="_blank" rel="noopener" className="block rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+                {ad.image_url
+                  ? <Image src={ad.image_url} alt={ad.title} width={1000} height={160} className="w-full object-cover max-h-40" />
+                  : <div className="bg-gradient-to-r from-green-500 to-teal-500 text-white text-center py-6 font-bold text-lg">{ad.title}</div>
+                }
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* CTA */}
       <section className="py-16 px-4 bg-gray-900 text-white text-center">
         <div className="max-w-2xl mx-auto">
@@ -150,6 +206,22 @@ export default function Home() {
           </Link>
         </div>
       </section>
+
+      {/* 홈 하단 광고 */}
+      {homeBottomAds.length > 0 && (
+        <div className="py-4 px-4 bg-white border-t border-gray-100">
+          <div className="max-w-4xl mx-auto flex flex-col gap-3">
+            {homeBottomAds.map(ad => (
+              <a key={ad.id} href={ad.link_url || '#'} target="_blank" rel="noopener" className="block rounded-xl overflow-hidden">
+                {ad.image_url
+                  ? <Image src={ad.image_url} alt={ad.title} width={1000} height={120} className="w-full object-cover max-h-32" />
+                  : <div className="bg-gradient-to-r from-orange-500 to-red-500 text-white text-center py-5 font-bold">{ad.title}</div>
+                }
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
     </>
   )
 }

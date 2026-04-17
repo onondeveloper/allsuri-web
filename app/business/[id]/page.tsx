@@ -18,7 +18,7 @@ type Review = {
 async function getBusiness(id: string) {
   const { data, error } = await supabase
     .from('users')
-    .select('id, name, businessname, avatar_url, address, serviceareas, specialties, bio, createdat, estimates_created_count, jobs_accepted_count')
+    .select('id, name, businessname, avatar_url, address, serviceareas, specialties, bio, createdat, estimates_created_count, jobs_accepted_count, description, category, region, phonenumber, profile_image_url')
     .eq('id', id)
     .eq('role', 'business')
     .single()
@@ -169,9 +169,27 @@ export default async function BusinessProfilePage({ params }: Props) {
               </div>
             </div>
 
-            {/* 소개글 */}
-            {b.bio && (
-              <p className="mt-4 text-sm text-gray-600 leading-relaxed border-t border-gray-50 pt-4">{b.bio}</p>
+            {/* 소개글 / 상세 설명 */}
+            {(b.bio || b.description) && (
+              <p className="mt-4 text-sm text-gray-600 leading-relaxed border-t border-gray-50 pt-4">
+                {b.bio || b.description}
+              </p>
+            )}
+
+            {/* 업종 / 지역 */}
+            {(b.category || b.region) && (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {b.category && (
+                  <span className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 text-sm px-3 py-1.5 rounded-full border border-blue-100 font-medium">
+                    🔧 {b.category}
+                  </span>
+                )}
+                {b.region && (
+                  <span className="inline-flex items-center gap-1 bg-gray-50 text-gray-700 text-sm px-3 py-1.5 rounded-full border border-gray-200 font-medium">
+                    📍 {b.region}
+                  </span>
+                )}
+              </div>
             )}
 
             {/* 전문 분야 */}
@@ -201,6 +219,13 @@ export default async function BusinessProfilePage({ params }: Props) {
                 </div>
               </div>
             )}
+
+            {/* 연락처 (가입일) */}
+            <div className="mt-4 pt-4 border-t border-gray-50 flex flex-wrap gap-4 text-xs text-gray-400">
+              {b.createdat && (
+                <span>가입일: {new Date(b.createdat).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long' })}</span>
+              )}
+            </div>
           </div>
         </div>
 
