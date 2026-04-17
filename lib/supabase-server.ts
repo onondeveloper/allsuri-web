@@ -7,25 +7,8 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
 
 // ── 서버 전용 클라이언트 (RLS bypass, API routes 전용) ────────────
-// Proxy를 사용한 lazy 초기화 – 빌드 시점에 env var가 없어도 모듈 로드 성공
-let _adminClient: ReturnType<typeof createClient> | null = null
-
-function getAdminClient() {
-  if (!_adminClient) {
-    if (!supabaseUrl || !serviceRoleKey) {
-      throw new Error('Missing env vars: NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY')
-    }
-    _adminClient = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    })
-  }
-  return _adminClient
-}
-
-export const supabaseAdmin = new Proxy({} as ReturnType<typeof createClient>, {
-  get(_target, prop, receiver) {
-    return Reflect.get(getAdminClient(), prop, receiver)
-  },
+export const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+  auth: { autoRefreshToken: false, persistSession: false },
 })
 
 // ── 세션 기반 서버 클라이언트 (Server Components / admin 페이지용) ─
