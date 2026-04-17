@@ -11,9 +11,10 @@ export async function POST(req: NextRequest) {
 
     const { data: orders, error } = await supabaseAdmin
       .from('orders')
-      .select('id, title, status, category, address, createdAt, isAnonymous, isAwarded, visitDate')
+      .select('id, title, status, category, address, createdAt, isAnonymous, isAwarded, visitDate, customerPhone, webPassword')
+      .eq('isAnonymous', true)
       .order('createdAt', { ascending: false })
-      .limit(200)
+      .limit(500)
 
     if (error) throw error
 

@@ -193,6 +193,10 @@ export default function RequestForm() {
 
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || '요청 실패')
+      if (data.warning) {
+        // listing 등록 실패 (DB SQL 미실행) → 콘솔에 표시, 접수는 완료
+        console.warn('[submit] 앱 오더 등록 경고:', data.warning)
+      }
 
       setSubmitted(true)
     } catch (e: unknown) {
