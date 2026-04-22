@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { Suspense } from 'react'
 import Link from 'next/link'
 import RequestForm from './RequestForm'
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase-server'
 
 export const metadata: Metadata = {
   title: '무료 견적 요청 | 올수리',
@@ -17,21 +17,24 @@ type FeaturedBusiness = {
 
 async function getFeaturedBusinesses(): Promise<FeaturedBusiness[]> {
   try {
-    const { data: featData } = await supabase
+    // supabaseAdmin (service_role) 사용 → users RLS bypass
+    const { data: featData } = await supabaseAdmin
       .from('web_featured_businesses')
-      .select('id, sort_order, user_id, users(id, name, businessname, phonenumber, category, region, avatar_url)')
+      .select('id, user_id')
       .order('sort_order', { ascending: true })
 
     if (!featData || featData.length === 0) return []
 
-    const featList = featData as Array<{
-      id: string; user_id: string
-      users: { id: string; name: string; businessname: string | null; phonenumber: string | null; category: string | null; region: string | null; avatar_url: string | null }
-    }>
-    const ids = featList.map(f => f.user_id)
+    const featList = featData as { id: string; user_id: string }[]
+    const ids = featList.map(f => f.user_id).filter(Boolean)
 
-    const { data: reviewsData } = await supabase
-      .from('business_reviews').select('business_id, rating').in('business_id', ids)
+    const [{ data: usersData }, { data: reviewsData }] = await Promise.all([
+      supabaseAdmin.from('users').select('id, name, businessname, phonenumber, category, region, avatar_url').in('id', ids),
+      supabaseAdmin.from('business_reviews').select('business_id, rating').in('business_id', ids),
+    ])
+
+    const usersMap: Record<string, { id: string; name: string; businessname: string | null; phonenumber: string | null; category: string | null; region: string | null; avatar_url: string | null }> = {}
+    ;(usersData || []).forEach((u: typeof usersMap[string]) => { usersMap[u.id] = u })
 
     const ratingMap: Record<string, { sum: number; count: number }> = {}
     ;(reviewsData || []).forEach((r: { business_id: string; rating: number }) => {
@@ -41,19 +44,20 @@ async function getFeaturedBusinesses(): Promise<FeaturedBusiness[]> {
     })
 
     return featList.map(f => {
-      const u = f.users
+      const u = usersMap[f.user_id]
+      if (!u) return null
       const rm = ratingMap[f.user_id]
       return {
         id: f.id, userId: f.user_id,
-        businessName: u?.businessname || u?.name || '',
-        phonenumber: u?.phonenumber || '',
-        category: u?.category || '',
-        region: u?.region || '',
-        avatarUrl: u?.avatar_url || null,
+        businessName: u.businessname || u.name || '',
+        phonenumber: u.phonenumber || '',
+        category: u.category || '',
+        region: u.region || '',
+        avatarUrl: u.avatar_url || null,
         avgRating: rm ? Math.round((rm.sum / rm.count) * 10) / 10 : null,
         reviewCount: rm?.count || 0,
       }
-    })
+    }).filter((x): x is FeaturedBusiness => x !== null)
   } catch { return [] }
 }
 

@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { supabase, CATEGORIES } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase-server'
 
 const categoryIcons: Record<string, string> = {
   '누수': '💧',
@@ -33,46 +34,63 @@ type FeaturedBusiness = {
 }
 
 async function getWebContent(): Promise<{ settings: Record<string, string>; ads: WebAd[]; featured: FeaturedBusiness[] }> {
-  try {
-    const [{ data: settingsData }, { data: adsData }, { data: featData }] = await Promise.all([
-      supabase.from('web_settings').select('key, value'),
-      supabase.from('web_ads').select('id, title, image_url, link_url, position').eq('is_active', true).order('sort_order', { ascending: true }),
-      supabase.from('web_featured_businesses').select('id, sort_order, user_id, users(id, name, businessname, phonenumber, category, region, avatar_url, jobs_accepted_count)').order('sort_order', { ascending: true }),
-    ])
-    const settings: Record<string, string> = {}
-    ;(settingsData || []).forEach((s: { key: string; value: string }) => { settings[s.key] = s.value })
+  // ── 사이트 설정 + 광고 (anon key – public 테이블)
+  const [{ data: settingsData }, { data: adsData }] = await Promise.all([
+    supabase.from('web_settings').select('key, value').then(r => r).catch(() => ({ data: null })),
+    supabase.from('web_ads').select('id, title, image_url, link_url, position').eq('is_active', true).order('sort_order', { ascending: true }).then(r => r).catch(() => ({ data: null })),
+  ])
+  const settings: Record<string, string> = {}
+  ;(settingsData || []).forEach((s: { key: string; value: string }) => { settings[s.key] = s.value })
 
-    // 추천 업체 평점 조회
-    const featList = (featData || []) as Array<{ id: string; user_id: string; users: { id: string; name: string; businessname: string | null; phonenumber: string | null; category: string | null; region: string | null; avatar_url: string | null; jobs_accepted_count: number | null } }>
+  // ── 추천 업체: supabaseAdmin (service_role) 사용 → users RLS bypass
+  let featured: FeaturedBusiness[] = []
+  try {
+    const { data: featData } = await supabaseAdmin
+      .from('web_featured_businesses')
+      .select('id, user_id')
+      .order('sort_order', { ascending: true })
+
+    const featList = (featData || []) as { id: string; user_id: string }[]
     const featIds = featList.map(f => f.user_id).filter(Boolean)
-    let featured: FeaturedBusiness[] = []
+
     if (featIds.length > 0) {
-      const { data: reviewsData } = await supabase
-        .from('business_reviews').select('business_id, rating').in('business_id', featIds)
+      const [{ data: usersData }, { data: reviewsData }] = await Promise.all([
+        supabaseAdmin.from('users').select('id, name, businessname, phonenumber, category, region, avatar_url, jobs_accepted_count').in('id', featIds),
+        supabaseAdmin.from('business_reviews').select('business_id, rating').in('business_id', featIds),
+      ])
+
+      const usersMap: Record<string, { id: string; name: string; businessname: string | null; phonenumber: string | null; category: string | null; region: string | null; avatar_url: string | null; jobs_accepted_count: number | null }> = {}
+      ;(usersData || []).forEach((u: typeof usersMap[string]) => { usersMap[u.id] = u })
+
       const ratingMap: Record<string, { sum: number; count: number }> = {}
       ;(reviewsData || []).forEach((r: { business_id: string; rating: number }) => {
         if (!ratingMap[r.business_id]) ratingMap[r.business_id] = { sum: 0, count: 0 }
         ratingMap[r.business_id].sum += r.rating
         ratingMap[r.business_id].count += 1
       })
+
       featured = featList.map(f => {
-        const u = f.users
+        const u = usersMap[f.user_id]
+        if (!u) return null
         const rm = ratingMap[f.user_id]
         return {
           id: f.id, userId: f.user_id,
-          businessName: u?.businessname || u?.name || '',
-          phonenumber: u?.phonenumber || '',
-          category: u?.category || '',
-          region: u?.region || '',
-          avatarUrl: u?.avatar_url || null,
-          jobsCount: u?.jobs_accepted_count || 0,
+          businessName: u.businessname || u.name || '',
+          phonenumber: u.phonenumber || '',
+          category: u.category || '',
+          region: u.region || '',
+          avatarUrl: u.avatar_url || null,
+          jobsCount: u.jobs_accepted_count || 0,
           avgRating: rm ? Math.round((rm.sum / rm.count) * 10) / 10 : null,
           reviewCount: rm?.count || 0,
         }
-      })
+      }).filter((x): x is FeaturedBusiness => x !== null)
     }
-    return { settings, ads: (adsData || []) as WebAd[], featured }
-  } catch { return { settings: {}, ads: [], featured: [] } }
+  } catch (e) {
+    console.warn('[getWebContent] featured 로드 실패:', e)
+  }
+
+  return { settings, ads: (adsData || []) as WebAd[], featured }
 }
 
 export default async function Home() {
