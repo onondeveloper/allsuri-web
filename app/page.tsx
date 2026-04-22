@@ -25,21 +25,58 @@ const reviews = [
 ]
 
 type WebAd = { id: string; title: string; image_url: string | null; link_url: string | null; position: string }
+type FeaturedBusiness = {
+  id: string; userId: string; businessName: string
+  phonenumber: string; category: string; region: string
+  avatarUrl: string | null; jobsCount: number
+  avgRating: number | null; reviewCount: number
+}
 
-async function getWebContent(): Promise<{ settings: Record<string, string>; ads: WebAd[] }> {
+async function getWebContent(): Promise<{ settings: Record<string, string>; ads: WebAd[]; featured: FeaturedBusiness[] }> {
   try {
-    const [{ data: settingsData }, { data: adsData }] = await Promise.all([
+    const [{ data: settingsData }, { data: adsData }, { data: featData }] = await Promise.all([
       supabase.from('web_settings').select('key, value'),
       supabase.from('web_ads').select('id, title, image_url, link_url, position').eq('is_active', true).order('sort_order', { ascending: true }),
+      supabase.from('web_featured_businesses').select('id, sort_order, user_id, users(id, name, businessname, phonenumber, category, region, avatar_url, jobs_accepted_count)').order('sort_order', { ascending: true }),
     ])
     const settings: Record<string, string> = {}
     ;(settingsData || []).forEach((s: { key: string; value: string }) => { settings[s.key] = s.value })
-    return { settings, ads: (adsData || []) as WebAd[] }
-  } catch { return { settings: {}, ads: [] } }
+
+    // 추천 업체 평점 조회
+    const featList = (featData || []) as Array<{ id: string; user_id: string; users: { id: string; name: string; businessname: string | null; phonenumber: string | null; category: string | null; region: string | null; avatar_url: string | null; jobs_accepted_count: number | null } }>
+    const featIds = featList.map(f => f.user_id).filter(Boolean)
+    let featured: FeaturedBusiness[] = []
+    if (featIds.length > 0) {
+      const { data: reviewsData } = await supabase
+        .from('business_reviews').select('business_id, rating').in('business_id', featIds)
+      const ratingMap: Record<string, { sum: number; count: number }> = {}
+      ;(reviewsData || []).forEach((r: { business_id: string; rating: number }) => {
+        if (!ratingMap[r.business_id]) ratingMap[r.business_id] = { sum: 0, count: 0 }
+        ratingMap[r.business_id].sum += r.rating
+        ratingMap[r.business_id].count += 1
+      })
+      featured = featList.map(f => {
+        const u = f.users
+        const rm = ratingMap[f.user_id]
+        return {
+          id: f.id, userId: f.user_id,
+          businessName: u?.businessname || u?.name || '',
+          phonenumber: u?.phonenumber || '',
+          category: u?.category || '',
+          region: u?.region || '',
+          avatarUrl: u?.avatar_url || null,
+          jobsCount: u?.jobs_accepted_count || 0,
+          avgRating: rm ? Math.round((rm.sum / rm.count) * 10) / 10 : null,
+          reviewCount: rm?.count || 0,
+        }
+      })
+    }
+    return { settings, ads: (adsData || []) as WebAd[], featured }
+  } catch { return { settings: {}, ads: [], featured: [] } }
 }
 
 export default async function Home() {
-  const { settings, ads } = await getWebContent()
+  const { settings, ads, featured } = await getWebContent()
   const noticeBannerActive = settings.notice_banner_active === 'true'
   const homeTopAds = ads.filter(a => a.position === 'home_top')
   const homeMiddleAds = ads.filter(a => a.position === 'home_middle')
@@ -132,6 +169,64 @@ export default async function Home() {
           </div>
         </div>
       </section>
+
+      {/* 이번 달 우수 업체 */}
+      {featured.length > 0 && (
+        <section className="py-14 px-4 bg-white">
+          <div className="max-w-4xl mx-auto">
+            <div className="text-center mb-8">
+              <span className="inline-block bg-yellow-100 text-yellow-700 text-xs font-bold px-3 py-1 rounded-full mb-2">⭐ 광고</span>
+              <h2 className="text-2xl font-bold text-gray-900">이번 달 우수 업체</h2>
+              <p className="text-gray-500 mt-1 text-sm">검증된 전문 업체를 만나보세요</p>
+            </div>
+            <div className="grid md:grid-cols-3 gap-5">
+              {featured.map((biz, idx) => (
+                <Link key={biz.id} href={`/business/${biz.userId}`}
+                  className="bg-white rounded-2xl border border-gray-100 hover:border-blue-300 hover:shadow-md p-5 transition-all relative group">
+                  {/* 순위 배지 */}
+                  <div className="absolute top-4 right-4 w-7 h-7 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold">
+                    {idx + 1}
+                  </div>
+                  {/* 아바타 */}
+                  <div className="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600 font-bold text-xl mb-3 overflow-hidden">
+                    {biz.avatarUrl
+                      ? <img src={biz.avatarUrl} alt={biz.businessName} className="w-full h-full object-cover" />
+                      : biz.businessName[0]}
+                  </div>
+                  {/* 업체명 */}
+                  <div className="font-bold text-gray-900 text-base mb-0.5 group-hover:text-blue-600 transition-colors">
+                    {biz.businessName}
+                  </div>
+                  {/* 평점 */}
+                  {biz.avgRating !== null ? (
+                    <div className="flex items-center gap-1 mb-1">
+                      <span className="text-yellow-400 text-sm">{'★'.repeat(Math.round(biz.avgRating))}{'☆'.repeat(5 - Math.round(biz.avgRating))}</span>
+                      <span className="text-sm font-semibold text-gray-700">{biz.avgRating.toFixed(1)}</span>
+                      <span className="text-xs text-gray-400">({biz.reviewCount})</span>
+                    </div>
+                  ) : (
+                    <div className="text-xs text-gray-300 mb-1">리뷰 없음</div>
+                  )}
+                  {/* 카테고리 · 지역 */}
+                  <div className="text-xs text-gray-500 mb-2">{biz.category}{biz.region ? ` · ${biz.region}` : ''}</div>
+                  {/* 연락처 */}
+                  {biz.phonenumber && (
+                    <div className="flex items-center gap-1 text-sm text-blue-600 font-semibold mt-2 pt-2 border-t border-gray-100">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                      </svg>
+                      {biz.phonenumber}
+                    </div>
+                  )}
+                  {biz.jobsCount > 0 && (
+                    <div className="text-xs text-gray-400 mt-1">완료 {biz.jobsCount}건</div>
+                  )}
+                </Link>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Stats */}
       <section className="py-12 px-4 bg-blue-600 text-white">
