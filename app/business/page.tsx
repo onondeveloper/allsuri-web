@@ -5,7 +5,7 @@ import BusinessList from './BusinessList'
 
 export const metadata: Metadata = {
   title: '전문 사업자 찾기 | 올수리',
-  description: '올수리에 등록된 집수리 전문 사업자를 찾아보세요. 누수·배관·난방·리모델링 전문 업체 800곳 이상.',
+  description: '올수리에 등록된 집수리 전문 사업자를 찾아보세요. 누수·배관·방수·리모델링 전문 업체 800곳 이상.',
 }
 
 export const revalidate = 60

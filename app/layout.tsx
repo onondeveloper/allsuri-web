@@ -5,8 +5,8 @@ import Footer from '@/components/Footer'
 
 export const metadata: Metadata = {
   title: '올수리 - 집수리 전문 견적 서비스',
-  description: '누수, 배관, 난방, 리모델링 등 집수리 전문가에게 무료로 견적을 받아보세요. 앱 설치 없이 바로 요청 가능합니다.',
-  keywords: '집수리, 견적, 누수, 배관, 난방, 리모델링, 화장실, 주방',
+  description: '누수, 배관, 방수, 리모델링 등 집수리 전문가에게 무료로 견적을 받아보세요. 앱 설치 없이 바로 요청 가능합니다.',
+  keywords: '집수리, 견적, 누수, 배관, 방수, 리모델링, 화장실, 주방',
   openGraph: {
     title: '올수리 - 집수리 전문 견적 서비스',
     description: '무료로 여러 업체의 견적을 비교하세요',
