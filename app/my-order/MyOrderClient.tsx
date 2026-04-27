@@ -9,8 +9,8 @@ interface OrderSummary {
   address: string; createdAt: string; isAwarded: boolean; visitDate: string
 }
 interface Estimate {
-  id: string; businessId: string; businessName: string; equipmentType: string
-  amount: number; description: string; estimatedDays: number
+  id: string; businessId: string; businessName: string; personName?: string
+  equipmentType: string; amount: number; description: string; estimatedDays: number
   createdAt: string; status: string; isAwarded: boolean; isBid?: boolean
   region?: string; bizDescription?: string; avatarUrl?: string | null
   hasBusinessReg?: boolean; jobsCount?: number
@@ -439,6 +439,9 @@ export default function MyOrderClient() {
                                 <span className="text-xs bg-green-50 text-green-700 border border-green-300 rounded-full px-2 py-0.5 font-semibold">사업자등록</span>
                               )}
                             </div>
+                            {e.personName && e.personName !== e.businessName && (
+                              <p className="text-xs text-gray-400 mt-0.5">대표자: {e.personName}</p>
+                            )}
                             <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-500 flex-wrap">
                               {e.equipmentType && <span>🔧 {e.equipmentType}</span>}
                               {e.region && <span>📍 {e.region}</span>}
@@ -553,6 +556,9 @@ export default function MyOrderClient() {
                   <div className="flex items-start justify-between mb-4">
                     <div>
                       <h3 className="text-lg font-bold">{bizModal.biz.businessname || bizModal.biz.name}</h3>
+                      {bizModal.biz.name && bizModal.biz.name !== bizModal.biz.businessname && (
+                        <p className="text-sm text-gray-500 mt-0.5">대표자: {bizModal.biz.name}</p>
+                      )}
                       <div className="flex items-center gap-2 mt-1">
                         {bizModal.avgRating && (
                           <span className="text-yellow-400"><Stars value={bizModal.avgRating} size="text-base" /></span>
@@ -565,6 +571,7 @@ export default function MyOrderClient() {
                     <button onClick={() => setBizModal(null)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">✕</button>
                   </div>
                   <div className="bg-gray-50 rounded-xl p-4 mb-4 space-y-2 text-sm">
+                    {bizModal.biz.name && <div className="flex justify-between"><span className="text-gray-500">대표자</span><span className="font-medium">{bizModal.biz.name}</span></div>}
                     <div className="flex justify-between"><span className="text-gray-500">카테고리</span><span className="font-medium">{bizModal.biz.category || '-'}</span></div>
                     <div className="flex justify-between"><span className="text-gray-500">지역</span><span className="font-medium">{bizModal.biz.region || '-'}</span></div>
                     {bizModal.biz.description && (

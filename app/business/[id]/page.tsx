@@ -98,7 +98,9 @@ export default async function BusinessProfilePage({ params }: Props) {
   reviews.forEach((r) => { if (dist[r.rating] !== undefined) dist[r.rating]++ })
   const maxDist = Math.max(...Object.values(dist))
 
-  const displayName = b.businessname || b.name
+  // 상호명 우선, 없으면 이름
+  const displayName = (b.businessname && b.businessname.trim()) ? b.businessname : b.name
+  const showPersonName = b.name && b.name !== displayName
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -134,6 +136,9 @@ export default async function BusinessProfilePage({ params }: Props) {
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h1 className="text-xl font-bold text-gray-900">{displayName}</h1>
+                {showPersonName && (
+                  <p className="text-sm text-gray-500 mt-0.5">대표자: {b.name}</p>
+                )}
                 {b.address && (
                   <p className="text-sm text-gray-400 mt-0.5">📍 {b.address}</p>
                 )}

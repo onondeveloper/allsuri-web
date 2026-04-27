@@ -39,8 +39,11 @@ function StarRating({ rating, count }: { rating: number; count: number }) {
 }
 
 function BusinessCard({ b }: { b: Business }) {
-  const displayName = b.businessname || b.name
+  // 상호명 우선 표시
+  const displayName = (b.businessname && b.businessname.trim()) ? b.businessname : b.name
   const initial = displayName[0] || '?'
+  // 대표자명: 상호명과 다를 때만 표시
+  const showPersonName = b.name && b.name !== displayName
 
   return (
     <Link
@@ -58,6 +61,9 @@ function BusinessCard({ b }: { b: Business }) {
         </div>
         <div className="flex-1 min-w-0">
           <div className="font-bold text-gray-900 truncate">{displayName}</div>
+          {showPersonName && (
+            <div className="text-xs text-gray-400 truncate mt-0.5">대표자: {b.name}</div>
+          )}
           {b.address && (
             <div className="text-xs text-gray-400 truncate mt-0.5">📍 {b.address}</div>
           )}

@@ -76,10 +76,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const estimates = bids.map(b => {
     const biz = biddersMap[b.bidder_id] || {} as UserRow
+    const businessName = (biz.businessname && biz.businessname.trim()) ? biz.businessname : (biz.name || '사업자')
     return {
       id: b.id,
       businessId: b.bidder_id,
-      businessName: biz.businessname || biz.name || '사업자',
+      businessName,
+      personName: biz.name || '',          // 대표자 이름
       equipmentType: biz.category || '',
       region: biz.region || '',
       bizDescription: biz.description || '',
