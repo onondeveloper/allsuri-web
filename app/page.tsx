@@ -35,10 +35,12 @@ type FeaturedBusiness = {
 
 async function getWebContent(): Promise<{ settings: Record<string, string>; ads: WebAd[]; featured: FeaturedBusiness[] }> {
   // ── 사이트 설정 + 광고 (anon key – public 테이블)
-  const [{ data: settingsData }, { data: adsData }] = await Promise.all([
-    supabase.from('web_settings').select('key, value').then(r => r).catch(() => ({ data: null })),
-    supabase.from('web_ads').select('id, title, image_url, link_url, position').eq('is_active', true).order('sort_order', { ascending: true }).then(r => r).catch(() => ({ data: null })),
+  const [settingsResult, adsResult] = await Promise.all([
+    supabase.from('web_settings').select('key, value'),
+    supabase.from('web_ads').select('id, title, image_url, link_url, position').eq('is_active', true).order('sort_order', { ascending: true }),
   ])
+  const settingsData = settingsResult.data ?? null
+  const adsData = adsResult.data ?? null
   const settings: Record<string, string> = {}
   ;(settingsData || []).forEach((s: { key: string; value: string }) => { settings[s.key] = s.value })
 
