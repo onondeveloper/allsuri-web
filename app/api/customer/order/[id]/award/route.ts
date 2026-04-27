@@ -90,7 +90,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     ...(jobId ? { matchedJobId: jobId } : {}),
   }).eq('id', orderId)
 
-  // 알림 DB 저장 (Supabase 웹훅 → FCM push)
+  // ── 낙찰 사업자 알림 (DB INSERT → Supabase webhook → FCM push) ──
   await supabaseAdmin.from('notifications').insert({
     userid: businessId,
     title: `🎉 낙찰되었습니다 - ${order.title || '견적 요청'}`,
@@ -100,6 +100,35 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     isread: false,
     createdat: now,
   })
+
+  // ── 거절된 입찰자들에게 알림 ────────────────────────────────────
+  if (listingId) {
+    try {
+      const { data: rejectedBids } = await supabaseAdmin
+        .from('order_bids')
+        .select('bidder_id')
+        .eq('listing_id', listingId)
+        .eq('status', 'rejected')
+      if (rejectedBids && rejectedBids.length > 0) {
+        const rejectedNotifications = rejectedBids
+          .filter((b: { bidder_id: string }) => b.bidder_id !== businessId)
+          .map((b: { bidder_id: string }) => ({
+            userid: b.bidder_id,
+            title: '입찰 결과 안내',
+            body: '입찰하신 견적이 다른 사업자께 낙찰 되었어요.. 다른 견적에 입찰을 시도해 보세요!',
+            type: 'bid_rejected',
+            jobid: jobId,
+            isread: false,
+            createdat: now,
+          }))
+        if (rejectedNotifications.length > 0) {
+          await supabaseAdmin.from('notifications').insert(rejectedNotifications)
+        }
+      }
+    } catch (e) {
+      console.warn('[award] 거절 알림 전송 실패 (무시):', e)
+    }
+  }
 
   return NextResponse.json({ success: true, jobId, message: `${bizName}에게 낙찰되었습니다.` })
 }
