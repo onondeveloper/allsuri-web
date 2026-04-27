@@ -336,19 +336,55 @@ export default function MyOrderClient() {
             </div>
 
             {/* 낙찰된 사업자 */}
-            {detail.order.isAwarded && detail.awardedBusiness && (
+            {detail.order.isAwarded && (
               <div className="bg-green-50 border border-green-200 rounded-2xl p-5 mb-4">
-                <div className="flex items-center gap-2 mb-2">
+                <div className="flex items-center gap-2 mb-3">
                   <span className="text-green-600 font-bold text-sm">🏆 낙찰된 사업자</span>
                 </div>
-                <button onClick={() => {
-                  const fakeEst = { businessId: detail.awardedBusiness!.id } as Estimate
-                  openBizModal(fakeEst)
-                }} className="w-full text-left">
-                  <p className="font-bold text-gray-900">{detail.awardedBusiness.businessname || detail.awardedBusiness.name}</p>
-                  <p className="text-sm text-gray-500">{detail.awardedBusiness.category} {detail.awardedBusiness.region ? '· ' + detail.awardedBusiness.region : ''}</p>
-                  <p className="text-xs text-blue-600 mt-1">상세 정보 보기 →</p>
-                </button>
+
+                {/* 선택된 입찰 견적가/기간 (estimates[0]에서) */}
+                {detail.estimates[0] && detail.estimates[0].amount > 0 && (
+                  <div className="flex items-center justify-between bg-gradient-to-r from-green-700 to-green-500 rounded-xl px-4 py-3 mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-white text-sm">💰</span>
+                      <span className="text-white font-bold text-base">{fmtAmount(detail.estimates[0].amount)}</span>
+                    </div>
+                    {detail.estimates[0].estimatedDays > 0 && (
+                      <span className="text-green-100 text-sm">📅 {detail.estimates[0].estimatedDays}일</span>
+                    )}
+                  </div>
+                )}
+
+                {/* 사업자 정보: awardedBusiness 우선, 없으면 estimates[0] 사용 */}
+                {(() => {
+                  const biz = detail.awardedBusiness
+                  const est = detail.estimates[0]
+                  const bizName = biz ? (biz.businessname || biz.name) : est?.businessName
+                  const bizCategory = biz?.category || est?.equipmentType
+                  const bizRegion = biz?.region || est?.region
+                  const bizId = biz?.id || est?.businessId
+                  return bizName ? (
+                    <button onClick={() => {
+                      if (biz) {
+                        const fakeEst = { businessId: biz.id } as Estimate
+                        openBizModal(fakeEst)
+                      } else if (est) {
+                        openBizModal(est)
+                      }
+                    }} className="w-full text-left">
+                      <p className="font-bold text-gray-900 text-base">{bizName}</p>
+                      <p className="text-sm text-gray-500 mt-0.5">
+                        {bizCategory}{bizRegion ? ' · ' + bizRegion : ''}
+                      </p>
+                      {est?.bizDescription && (
+                        <p className="text-xs text-gray-600 mt-1 line-clamp-2">{est.bizDescription}</p>
+                      )}
+                      <p className="text-xs text-blue-600 mt-2">상세 정보 보기 →</p>
+                    </button>
+                  ) : (
+                    <p className="text-sm text-gray-500">사업자 정보를 불러오는 중...</p>
+                  )
+                })()}
               </div>
             )}
 

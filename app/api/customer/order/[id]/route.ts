@@ -25,6 +25,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const order = await verifyOrder(orderId, phone, password)
   if (!order) return NextResponse.json({ error: '인증 실패 또는 주문을 찾을 수 없습니다.' }, { status: 401 })
 
+  // PostgreSQL은 컬럼명을 소문자로 반환하므로 camelCase와 lowercase 모두 확인
+  const isOrderAwarded = !!(order.isAwarded ?? order.isawarded)
+
   // 연결된 marketplace_listing 조회 (web_order_id 컬럼이 있는 경우)
   let listingId: string | null = null
   try {
@@ -43,11 +46,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   }
   let bids: BidRow[] = []
   if (listingId) {
-    const { data: bidsData } = await supabaseAdmin
+    const query = supabaseAdmin
       .from('order_bids')
       .select('id, bidder_id, message, status, bid_amount, estimated_days, created_at')
       .eq('listing_id', listingId)
       .order('created_at', { ascending: true })
+    // 낙찰 후에는 선택된 입찰만 조회 (rejected/pending 숨김)
+    const { data: bidsData } = isOrderAwarded
+      ? await query.eq('status', 'selected')
+      : await query
     bids = (bidsData || []) as BidRow[]
   }
 
@@ -107,13 +114,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       status: order.status, category: order.category, address: order.address,
       visitDate: order.visitDate || order.visitdate,
       createdAt: order.createdAt || order.createdat,
-      isAwarded: order.isAwarded ?? false,
-      awardedEstimateId: order.awardedEstimateId,
+      isAwarded: isOrderAwarded,
+      awardedEstimateId: order.awardedEstimateId || order.awardedestimatedid,
       images: order.images || [],
-      adminRating: order.adminRating,
-      adminRatingComment: order.adminRatingComment,
-      matchedJobId: order.matchedJobId,
-      listingId,  // marketplace_listing ID (있으면)
+      adminRating: order.adminRating || order.adminrating,
+      adminRatingComment: order.adminRatingComment || order.adminratingcomment,
+      matchedJobId: order.matchedJobId || order.matchedjobid,
+      listingId,
     },
     estimates,
     awardedBusiness,

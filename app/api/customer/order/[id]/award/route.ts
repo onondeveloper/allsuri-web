@@ -16,7 +16,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (storedPhone !== normalizePhone(phone) || storedPwd !== String(password).trim()) {
     return NextResponse.json({ error: '인증 실패' }, { status: 401 })
   }
-  if (order.isAwarded) return NextResponse.json({ error: '이미 낙찰된 요청입니다.' }, { status: 400 })
+  if (order.isAwarded || order.isawarded) return NextResponse.json({ error: '이미 낙찰된 요청입니다.' }, { status: 400 })
 
   const now = new Date().toISOString()
 
