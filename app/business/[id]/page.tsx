@@ -137,7 +137,7 @@ export default async function BusinessProfilePage({ params }: Props) {
               <div>
                 <h1 className="text-xl font-bold text-gray-900">{displayName}</h1>
                 {showPersonName && (
-                  <p className="text-sm text-gray-500 mt-0.5">대표자: {b.name}</p>
+                  <p className="text-sm text-gray-500 mt-0.5">사장님 성함: {b.name}</p>
                 )}
                 {b.address && (
                   <p className="text-sm text-gray-400 mt-0.5">📍 {b.address}</p>

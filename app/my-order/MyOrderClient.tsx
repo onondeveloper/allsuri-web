@@ -363,6 +363,7 @@ export default function MyOrderClient() {
                   const bizCategory = biz?.category || est?.equipmentType
                   const bizRegion = biz?.region || est?.region
                   const bizId = biz?.id || est?.businessId
+                  const bizPersonName = biz?.name || est?.personName
                   return bizName ? (
                     <button onClick={() => {
                       if (biz) {
@@ -373,6 +374,9 @@ export default function MyOrderClient() {
                       }
                     }} className="w-full text-left">
                       <p className="font-bold text-gray-900 text-base">{bizName}</p>
+                      {bizPersonName && bizPersonName !== bizName && (
+                        <p className="text-xs text-gray-400 mt-0.5">사장님 성함: {bizPersonName}</p>
+                      )}
                       <p className="text-sm text-gray-500 mt-0.5">
                         {bizCategory}{bizRegion ? ' · ' + bizRegion : ''}
                       </p>
@@ -440,7 +444,7 @@ export default function MyOrderClient() {
                               )}
                             </div>
                             {e.personName && e.personName !== e.businessName && (
-                              <p className="text-xs text-gray-400 mt-0.5">대표자: {e.personName}</p>
+                              <p className="text-xs text-gray-400 mt-0.5">사장님 성함: {e.personName}</p>
                             )}
                             <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-500 flex-wrap">
                               {e.equipmentType && <span>🔧 {e.equipmentType}</span>}
@@ -557,7 +561,7 @@ export default function MyOrderClient() {
                     <div>
                       <h3 className="text-lg font-bold">{bizModal.biz.businessname || bizModal.biz.name}</h3>
                       {bizModal.biz.name && bizModal.biz.name !== bizModal.biz.businessname && (
-                        <p className="text-sm text-gray-500 mt-0.5">대표자: {bizModal.biz.name}</p>
+                        <p className="text-sm text-gray-500 mt-0.5">사장님 성함: {bizModal.biz.name}</p>
                       )}
                       <div className="flex items-center gap-2 mt-1">
                         {bizModal.avgRating && (
@@ -571,7 +575,8 @@ export default function MyOrderClient() {
                     <button onClick={() => setBizModal(null)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">✕</button>
                   </div>
                   <div className="bg-gray-50 rounded-xl p-4 mb-4 space-y-2 text-sm">
-                    {bizModal.biz.name && <div className="flex justify-between"><span className="text-gray-500">대표자</span><span className="font-medium">{bizModal.biz.name}</span></div>}
+                    {bizModal.biz.businessname && <div className="flex justify-between"><span className="text-gray-500">상호명</span><span className="font-medium">{bizModal.biz.businessname}</span></div>}
+                    {bizModal.biz.name && <div className="flex justify-between"><span className="text-gray-500">사장님 성함</span><span className="font-medium">{bizModal.biz.name}</span></div>}
                     <div className="flex justify-between"><span className="text-gray-500">카테고리</span><span className="font-medium">{bizModal.biz.category || '-'}</span></div>
                     <div className="flex justify-between"><span className="text-gray-500">지역</span><span className="font-medium">{bizModal.biz.region || '-'}</span></div>
                     {bizModal.biz.description && (

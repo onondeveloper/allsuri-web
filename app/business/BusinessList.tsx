@@ -62,7 +62,7 @@ function BusinessCard({ b }: { b: Business }) {
         <div className="flex-1 min-w-0">
           <div className="font-bold text-gray-900 truncate">{displayName}</div>
           {showPersonName && (
-            <div className="text-xs text-gray-400 truncate mt-0.5">대표자: {b.name}</div>
+            <div className="text-xs text-gray-400 truncate mt-0.5">사장님 성함: {b.name}</div>
           )}
           {b.address && (
             <div className="text-xs text-gray-400 truncate mt-0.5">📍 {b.address}</div>
