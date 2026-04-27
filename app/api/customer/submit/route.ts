@@ -4,81 +4,83 @@ import { supabaseAdmin } from '@/lib/supabase-server'
 // 고객 견적 폼 제출:
 // 1. orders 테이블에 저장 (B2C 고객 레코드)
 // 2. marketplace_listings 테이블에도 저장 (B2B와 동일한 앱 오더 목록)
-// 3. 모든 사업자에게 DB 알림 저장 + FCM 푸시 발송
-//    → notifications-send-bulk 함수에 위임 (배치 처리, 독립 실행)
-//    → fire-and-forget: 메인 응답 반환 후 비동기로 실행
+// 3. 알림 전송:
+//    - DB 알림: 전체 사업자에게 단일 INSERT (빠름)
+//    - FCM 푸시: fcm_token 보유 사용자에게만 전송 (적은 수 → 빠름)
+//    → 응답 반환 전에 동기적으로 실행 (fire-and-forget 안 씀)
+//    → FCM은 8초 타임아웃으로 timeout 보호
 
 const ALLSURIAPP_API_URL = process.env.ALLSURIAPP_API_URL || 'https://api.allsuri.app'
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
 
-async function broadcastNewWebOrder(listingId: string, title: string, category: string, address: string) {
-  try {
-    const { data: allUsers, error: usersError } = await supabaseAdmin
-      .from('users')
-      .select('id')
-      .limit(500)
+type UserRow = { id: string }
 
-    if (usersError || !allUsers || allUsers.length === 0) {
-      console.warn('[submit] 사업자 목록 조회 실패:', usersError?.message)
-      return
-    }
+async function sendWebOrderNotifications(
+  listingId: string, title: string, category: string, address: string
+) {
+  const regionShort = address.split(' ').slice(0, 2).join(' ')
+  const notifTitle = '새 고객 오더 등록'
+  const notifBody = `[${category}] ${title} · ${regionShort}`
+  const now = new Date().toISOString()
 
-    const regionShort = address.split(' ').slice(0, 2).join(' ')
-    const userIds = allUsers.map((u: { id: string }) => u.id)
-    const pushTitle = '새 고객 오더 등록'
-    const pushBody = `[${category}] ${title} · ${regionShort}`
+  // 전체 사용자 & FCM 토큰 보유 사용자를 병렬 조회
+  const [allRes, fcmRes] = await Promise.all([
+    supabaseAdmin.from('users').select('id').limit(500),
+    supabaseAdmin.from('users').select('id').not('fcm_token', 'is', null).limit(300),
+  ])
 
-    console.log(`[submit] broadcast 시작: ${userIds.length}명, listingId=${listingId}`)
+  const allIds = (allRes.data || []).map((u: UserRow) => u.id)
+  const fcmIds = (fcmRes.data || []).map((u: UserRow) => u.id)
 
-    // notifications-send-bulk 호출 (DB 저장 + FCM 푸시 일괄 발송)
-    // allsuriapp Netlify 함수가 독립적으로 처리 → 타임아웃 없음
-    const bulkRes = await fetch(
-      `${ALLSURIAPP_API_URL}/.netlify/functions/notifications-send-bulk`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
-        },
-        body: JSON.stringify({
-          userIds,
-          title: pushTitle,
-          body: pushBody,
-          data: { type: 'new_web_order', listingId },
-        }),
-      }
+  console.log(`[submit] 전체 사용자: ${allIds.length}명, FCM 토큰 보유: ${fcmIds.length}명`)
+
+  // ① DB 알림: 전체 사용자 일괄 INSERT (단 1회 요청, 매우 빠름)
+  if (allIds.length > 0) {
+    const { error } = await supabaseAdmin.from('notifications').insert(
+      allIds.map(uid => ({
+        userid: uid, title: notifTitle, body: notifBody,
+        type: 'new_web_order', isread: false, createdat: now,
+      }))
     )
+    if (error) console.warn('[submit] DB 알림 저장 실패:', error.message)
+    else console.log(`[submit] ✅ DB 알림 ${allIds.length}명 저장 완료`)
+  }
 
-    if (bulkRes.ok) {
-      const result = await bulkRes.json() as { total?: number; sent?: number; failed?: number }
-      console.log(`[submit] ✅ broadcast 완료: total=${result.total}, sent=${result.sent}, failed=${result.failed}`)
-    } else {
-      const errText = await bulkRes.text()
-      console.warn(`[submit] ⚠️ broadcast 응답 오류 (${bulkRes.status}): ${errText}`)
-      // 폴백: 직접 DB 알림 저장
-      await supabaseAdmin.from('notifications').insert(
-        userIds.map(uid => ({
-          userid: uid, title: pushTitle, body: pushBody,
-          type: 'new_web_order', isread: false, createdat: new Date().toISOString(),
-        }))
-      )
-    }
-  } catch (e: unknown) {
-    console.warn('[submit] broadcast 실패 (무시):', e instanceof Error ? e.message : String(e))
-    // 폴백: 직접 DB 알림 저장 시도
+  // ② FCM 푸시: fcm_token 보유 사용자에게만 전송 (skipDbInsert=true → 중복 DB 저장 방지)
+  if (fcmIds.length > 0 && SERVICE_ROLE_KEY) {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 8000) // 8s 타임아웃
     try {
-      const { data: users } = await supabaseAdmin.from('users').select('id').limit(500)
-      if (users && users.length > 0) {
-        const regionShort = address.split(' ').slice(0, 2).join(' ')
-        await supabaseAdmin.from('notifications').insert(
-          users.map((u: { id: string }) => ({
-            userid: u.id, title: '새 고객 오더 등록',
-            body: `[${category}] ${title} · ${regionShort}`,
-            type: 'new_web_order', isread: false, createdat: new Date().toISOString(),
-          }))
-        )
+      const res = await fetch(
+        `${ALLSURIAPP_API_URL}/.netlify/functions/notifications-send-bulk`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
+          },
+          body: JSON.stringify({
+            userIds: fcmIds,
+            title: notifTitle,
+            body: notifBody,
+            data: { type: 'new_web_order', listingId },
+            skipDbInsert: true,  // DB 알림은 위에서 이미 저장
+          }),
+          signal: controller.signal,
+        }
+      )
+      clearTimeout(timer)
+      if (res.ok) {
+        const r = await res.json() as { sent?: number; total?: number; failed?: number }
+        console.log(`[submit] ✅ FCM 발송 완료: sent=${r.sent}/${r.total}, failed=${r.failed}`)
+      } else {
+        console.warn(`[submit] ⚠️ FCM bulk 오류 (${res.status}):`, await res.text())
       }
-    } catch { /* 무시 */ }
+    } catch (e: unknown) {
+      clearTimeout(timer)
+      const msg = e instanceof Error ? e.message : String(e)
+      console.warn('[submit] FCM 발송 실패/타임아웃 (DB 알림은 저장됨):', msg)
+    }
   }
 }
 
@@ -181,8 +183,9 @@ export async function POST(req: NextRequest) {
         }
 
         const listingId = (listing2 as { id: string } | null)?.id ?? null
-        // 알림 broadcast: 응답 반환 후 백그라운드 실행 (타임아웃 방지)
-        if (listingId) broadcastNewWebOrder(listingId, title, category, fullAddress).catch(() => null)
+        if (listingId) {
+          try { await sendWebOrderNotifications(listingId, title, category, fullAddress) } catch { /* 무시 */ }
+        }
         return NextResponse.json({
           success: true, orderId, listingId,
           message: '견적 요청이 접수되었습니다.',
@@ -201,9 +204,16 @@ export async function POST(req: NextRequest) {
 
     const listingId = (listing as { id: string } | null)?.id ?? null
 
-    // ── 3. 사업자 알림 DB 저장 (fire-and-forget: 응답 후 백그라운드 실행)
-    // await 제거 → 타임아웃 502 방지. DB INSERT만 수행하므로 매우 빠름.
-    if (listingId) broadcastNewWebOrder(listingId, title, category, fullAddress).catch(() => null)
+    // ── 3. 알림 전송 (동기 실행: DB 알림 + FCM 푸시)
+    // DB 알림은 반드시 저장, FCM은 8초 타임아웃으로 보호 → 502 없음
+    if (listingId) {
+      try {
+        await sendWebOrderNotifications(listingId, title, category, fullAddress)
+      } catch (e: unknown) {
+        // 알림 실패는 응답에 영향 없음
+        console.warn('[submit] 알림 전송 오류 (무시):', e instanceof Error ? e.message : String(e))
+      }
+    }
 
     return NextResponse.json({
       success: true,
