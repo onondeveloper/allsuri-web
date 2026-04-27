@@ -53,30 +53,39 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   // 입찰자 사업자 정보 조회
   const bidderIds = [...new Set(bids.map(b => b.bidder_id).filter(Boolean))]
-  type UserRow = { id: string; name: string; businessname: string; category: string; region: string }
+  type UserRow = {
+    id: string; name: string; businessname: string; category: string; region: string
+    description: string | null; avatar_url: string | null
+    businessnumber: string | null; jobs_accepted_count: number | null
+  }
   let biddersMap: Record<string, UserRow> = {}
   if (bidderIds.length > 0) {
     const { data: bidders } = await supabaseAdmin
       .from('users')
-      .select('id, name, businessname, category, region')
+      .select('id, name, businessname, category, region, description, avatar_url, businessnumber, jobs_accepted_count')
       .in('id', bidderIds)
     ;(bidders || []).forEach((b: UserRow) => { biddersMap[b.id] = b })
   }
 
   const estimates = bids.map(b => {
-    const biz = biddersMap[b.bidder_id] || {}
+    const biz = biddersMap[b.bidder_id] || {} as UserRow
     return {
       id: b.id,
       businessId: b.bidder_id,
-      businessName: (biz as UserRow).businessname || (biz as UserRow).name || '사업자',
-      equipmentType: (biz as UserRow).category || '',
+      businessName: biz.businessname || biz.name || '사업자',
+      equipmentType: biz.category || '',
+      region: biz.region || '',
+      bizDescription: biz.description || '',
+      avatarUrl: biz.avatar_url || null,
+      hasBusinessReg: !!(biz.businessnumber && biz.businessnumber.trim()),
+      jobsCount: biz.jobs_accepted_count || 0,
       amount: b.bid_amount || 0,
       description: b.message || '',
       estimatedDays: b.estimated_days || 0,
       createdAt: b.created_at,
       status: b.status,
       isAwarded: b.status === 'selected',
-      isBid: true,  // order_bid 출처임을 표시
+      isBid: true,
     }
   })
 

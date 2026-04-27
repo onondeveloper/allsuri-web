@@ -7,7 +7,7 @@ const categoryIcons: Record<string, string> = {
   '누수': '💧',
   '화장실': '🚿',
   '배관': '🔩',
-  '방수': '🎨',
+  '페인트': '🎨',
   '주방': '🍳',
   '리모델링': '🏠',
   '기타': '🛠️',
@@ -22,7 +22,7 @@ const steps = [
 const reviews = [
   { name: '김○○', region: '서울 강남구', text: '누수 문제로 걱정이 많았는데 하루 만에 3곳에서 견적이 왔어요. 가격도 합리적이고 빠르게 해결했습니다.', category: '누수' },
   { name: '이○○', region: '경기 수원시', text: '화장실 리모델링 견적을 앱 없이 바로 요청했는데 너무 편했어요. 전문가분도 친절하게 설명해주셨습니다.', category: '화장실' },
-  { name: '박○○', region: '서울 마포구', text: '옥상 방수 공사 견적을 여러 업체에서 받아 비교할 수 있어서 좋았어요. 합리적인 가격에 깔끔하게 마무리됐습니다.', category: '방수' },
+  { name: '박○○', region: '서울 마포구', text: '옥상 방수 공사 견적을 여러 업체에서 받아 비교할 수 있어서 좋았어요~. 합리적인 가격에 깔끔하게 마무리됐습니다.', category: '방수' },
 ]
 
 type WebAd = { id: string; title: string; image_url: string | null; link_url: string | null; position: string }
