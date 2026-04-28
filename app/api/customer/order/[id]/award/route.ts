@@ -34,18 +34,24 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   let jobId: string | null = null
 
   if (isBid && listingId) {
-    // B2B와 동일 흐름: order_bid 상태 → 'selected'
-    // 트리거(handle_bidder_selection)가 자동으로:
-    //   - marketplace_listings.status = 'assigned'
-    //   - marketplace_listings.claimed_by = bidder_id
-    //   - 다른 입찰 → rejected
-    await supabaseAdmin
+    // 1) 선택된 bid → 'selected'
+    const { error: selErr } = await supabaseAdmin
       .from('order_bids')
       .update({ status: 'selected', updated_at: now })
-      .eq('id', estimateId)  // estimateId = bidId
+      .eq('id', estimateId)
+    if (selErr) console.warn('[award] order_bids selected update error:', selErr)
 
-    // job 생성 (트리거가 처리 못하는 경우 직접 생성)
-    const { data: jobData } = await supabaseAdmin.from('jobs').insert({
+    // 2) 같은 listing의 다른 입찰들 명시적으로 'rejected' (트리거 미동작 대비)
+    const { error: rejErr } = await supabaseAdmin
+      .from('order_bids')
+      .update({ status: 'rejected', updated_at: now })
+      .eq('listing_id', listingId)
+      .neq('id', estimateId)
+      .neq('status', 'selected')
+    if (rejErr) console.warn('[award] order_bids rejected bulk update error:', rejErr)
+
+    // 3) job 생성
+    const { data: jobData, error: jobErr } = await supabaseAdmin.from('jobs').insert({
       title: order.title || '웹 견적 요청',
       description: `[웹 고객 낙찰]\n요청: ${order.description || ''}\n\n📞 고객: ${customerName} / ${customerPhone}\n📍 주소: ${order.address || ''}`,
       owner_business_id: businessId,
@@ -57,15 +63,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       budget_amount: 0, awarded_amount: 0, commission_rate: 5,
       created_at: now, updated_at: now,
     }).select('id').maybeSingle()
+    if (jobErr) console.warn('[award] jobs insert error:', jobErr)
     jobId = jobData?.id || null
 
-    // marketplace_listing과 job 연결
-    if (jobId) {
-      await supabaseAdmin
-        .from('marketplace_listings')
-        .update({ jobid: jobId, updatedat: now })
-        .eq('id', listingId)
-    }
+    // 4) marketplace_listing 상태/연결 직접 갱신 (트리거 미동작 대비)
+    const { error: lstErr } = await supabaseAdmin
+      .from('marketplace_listings')
+      .update({
+        status: 'assigned',
+        selected_bidder_id: businessId,
+        claimed_by: businessId,
+        ...(jobId ? { jobid: jobId } : {}),
+        updatedat: now,
+      })
+      .eq('id', listingId)
+    if (lstErr) console.warn('[award] marketplace_listings update error:', lstErr)
   } else {
     // 기존 estimates 방식 폴백
     await supabaseAdmin.from('estimates').update({ status: 'awarded', awardedAt: now }).eq('id', estimateId)
@@ -81,14 +93,25 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     jobId = jobData?.id || null
   }
 
-  // order 낙찰 처리
-  await supabaseAdmin.from('orders').update({
+  // order 낙찰 처리 (camelCase 컬럼이 정상; 실패 시 lowercase 폴백)
+  const { error: ordErr } = await supabaseAdmin.from('orders').update({
     isAwarded: true, awardedAt: now,
     awardedEstimateId: estimateId,
     technicianId: businessId,
     status: 'in_progress',
     ...(jobId ? { matchedJobId: jobId } : {}),
   }).eq('id', orderId)
+  if (ordErr) {
+    console.warn('[award] orders camelCase update error → trying lowercase fallback:', ordErr)
+    const { error: ordErr2 } = await supabaseAdmin.from('orders').update({
+      isawarded: true, awardedat: now,
+      awardedestimateid: estimateId,
+      technicianid: businessId,
+      status: 'in_progress',
+      ...(jobId ? { matchedjobid: jobId } : {}),
+    }).eq('id', orderId)
+    if (ordErr2) console.error('[award] orders lowercase update also failed:', ordErr2)
+  }
 
   // ── 낙찰 사업자 알림 (DB INSERT → Supabase webhook → FCM push) ──
   await supabaseAdmin.from('notifications').insert({
