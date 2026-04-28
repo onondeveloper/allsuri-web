@@ -18,8 +18,7 @@ export default function Footer() {
           <h3 className="text-white font-semibold mb-3">서비스</h3>
           <ul className="space-y-2 text-sm">
             <li><Link href="/requests" className="hover:text-white transition-colors">견적 요청</Link></li>
-            <li><Link href="/community" className="hover:text-white transition-colors">커뮤니티</Link></li>
-            <li><Link href="/business" className="hover:text-white transition-colors">사업자 찾기</Link></li>
+            <li><Link href="/my-order" className="hover:text-white transition-colors">내 견적</Link></li>
           </ul>
         </div>
         <div>
